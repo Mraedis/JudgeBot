@@ -1,9 +1,7 @@
 from discord.ext import commands
 import asyncio
 import atexit
-import random as r
 from jbsql import jbDB as j
-# from jbsql import jbDBold as jo
 import secret
 import logging
 import time
@@ -22,8 +20,6 @@ j.create_summary_table(database)
 j.create_user_id_table(database)
 j.create_duel_user_table(database)
 j.create_duel_table(database)
-# jo.create_old_duel_table(database)
-# jo.create_old_duel_user_table(database)
 sql_c = database.cursor()
 
 
@@ -33,20 +29,20 @@ async def on_ready():
     logging.info(jBot.user.name)
     logging.info(jBot.user.id)
     logging.info('------')
-    for server in jBot.servers:
-        if 'Runevillage' in server.name:
+    for guild in jBot.guilds:
+        if 'Runevillage' in guild.name:
             logging.info('Updating membertable')
-            update_membertable(server.members)
+            update_membertable(guild.members)
 
 
 @jBot.event
-async def on_server_join(server):
-    logging.info('Joined the server: ' + server.name)
+async def on_server_join(guild):
+    logging.info('Joined the server: ' + guild.name)
 
 
 @jBot.event
 async def on_member_update(before, after):
-    if 'Runevillage' in before.server.name and before.nick != after.nick:
+    if 'Runevillage' in before.guild.name and before.nick != after.nick:
         logging.info('Member ' + before.name + ' is changing nicknames.')
         update_member(after)
 
@@ -90,7 +86,7 @@ async def on_message(message):
 async def parse(ctx):
     """parse duelstats"""
     try:
-        if '145451920557867008' in ctx.message.author.id:
+        if 145451920557867008 == ctx.message.author.id:
             start = time.time()
             logging.info('Parsing duelstats')
             parse_all()
@@ -106,7 +102,7 @@ async def parse(ctx):
 async def execute(ctx):
     """parse duelstats"""
     try:
-        if '145451920557867008' in ctx.message.author.id and 'order 66' in ctx.message.content:
+        if 145451920557867008 == ctx.message.author.id and 'order 66' in ctx.message.content:
             await ctx.send('It will be done, my lord.')
         return
     except Exception as e:
@@ -202,7 +198,7 @@ async def statme(ctx, arg1, arg2):
         }
         arg1 = arg1.lower()
         arg2 = arg2.upper()
-        if 'Runevillage' in str(ctx.message.server):
+        if 'Runevillage' in str(ctx.message.guild):
             if arg1 in 'tophighestbottomlowest' and arg2 in statmap:
                 allstats = j.get_all_stats(database)
                 topcalc = []
@@ -343,7 +339,7 @@ async def dueltop(ctx):
     try:
         start = time.time()
         us = ctx.message.author
-        if '145451920557867008' in us.id:
+        if 145451920557867008 == us.id:
             allstats = j.get_all_stats(database)
             topcalc = []
             # dueluser
@@ -384,16 +380,16 @@ async def oldstats(ctx):
     try:
         start = time.time()
         us = ctx.message.author
-        if '145451920557867008' in us.id and 'Runevillage' in ctx.message.server.name:
+        if '145451920557867008' in us.id and 'Runevillage' in ctx.message.guild.name:
             logging.info('Starting parsing of old stats')
-            targetchan = jBot.get_channel('208498021078401025')
-            afmsg = await jBot.get_message(targetchan, '212062234325680128')  # 212062174623825921
+            targetchan = jBot.get_channel(208498021078401025)
+            afmsg = await targetchan.fetch_message(212062234325680128)  # 212062174623825921
             targetmsg = 442022192054665216
             done = 0
             duelid = 0
             usertable = {}
-            while int(afmsg.id) <= targetmsg:
-                async for msg in jBot.logs_from(targetchan, after=afmsg, limit=5000):
+            while afmsg.id <= targetmsg:
+                async for msg in targetchan.history(after=afmsg, limit=5000):
                     if ('JimmyBot' in str(msg.author)) and (' is dueling ' in msg.content):
                         duellines = msg.content.split('\n')
                         conid = '000000000000000000'
@@ -406,7 +402,7 @@ async def oldstats(ctx):
                             chal = (duellines[0].split(' ('))[0]
                             cont = ((duellines[0].split(' ('))[1]).split('is dueling ')[1]
 
-                        async for trig in jBot.logs_from(targetchan, before=msg, limit=15, reverse=True):
+                        async for trig in targetchan.history(before=msg, limit=15, reverse=True):
                             if '!duel' in trig.content and trig.mentions:
                                 chalid = trig.author.id
                                 conid = trig.mentions[0].id
