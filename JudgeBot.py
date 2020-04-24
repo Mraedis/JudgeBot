@@ -208,25 +208,18 @@ async def oldstats(ctx):
         if 145451920557867008 == us.id and 'Runevillage' in ctx.message.guild.name:
             logging.info('Starting parsing of old stats')
             tchan = jBot.get_channel(208498021078401025)
-            # 212062557156933641 212062557156933641 489755037304750081
-            tmsg = await tchan.fetch_message(699104265763028992)
+            tmsg = await tchan.fetch_message(212062557156933641)
             targettime = tmsg.created_at
             for targetchan in ctx.message.guild.text_channels:
                 if targetchan.permissions_for(ctx.message.guild.me).read_messages:
-                    if targetchan.id == 208498021078401025:
-                        tmsg = await tchan.fetch_message(702541070801829950)
-                        targettime = tmsg.created_at
-                    else:
-                        tchan = jBot.get_channel(208498021078401025)
-                        tmsg = await tchan.fetch_message(212062557156933641)
+                    lastduel = j.get_last_duel(database, targetchan.id)
+                    if lastduel is not None:
+                        tmsg = await targetchan.fetch_message(lastduel[3])
                         targettime = tmsg.created_at
                     prevmsg = None
                     done = 0
                     trigger = False
                     ending = targetchan.last_message_id
-                    print(str(ending))
-                    print(str(targettime))
-                    print(str(targetchan.name))
                     if ending is not None:
                         while tid < ending:
                             async for msg in targetchan.history(after=targettime, limit=5000):
@@ -253,8 +246,6 @@ async def oldstats(ctx):
         return
     except Exception as e:
         logging.error('Caught an error while trying to parse stats: ' + str(e))
-        print(str(afmsg.id))
-        print(str(targettime))
         return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
 
 jBot.run(secret.secret)
