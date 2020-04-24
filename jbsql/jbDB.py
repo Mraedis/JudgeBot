@@ -252,6 +252,20 @@ def get_duel(conn, duelid):
     return duel
 
 
+def get_last_duel(conn, channelid):
+    """ Return oneduel
+    :param conn: connection to db
+    :param channelid: channel for which to retrieve duel
+    :return: duel or None
+    """
+    cur = conn.cursor(buffered=True)
+    cur.execute('SELECT MESSAGEID FROM duel_table WHERE CHANNEL=%s ORDER BY MESSAGEID DESC LIMIT 1 ', (channelid,))
+    conn.commit()
+    duel = cur.fetchone()
+    return duel
+
+
+
 def get_duels(conn):
     """ Return all duels
     :param conn: connection to db
