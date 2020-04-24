@@ -321,56 +321,14 @@ def get_all_stats(conn):
     return stats
 
 
-def insert_duel_user_stats(conn, statinfo):
-    """ Insert new duel user statsin db
-    :param conn: connection to db
-    :param statinfo: stats to be inserted
-    """
-    sql = ''' INSERT INTO duel_user_table(USERID, DUELSWON, DUELSLOST, DUELSTIED, DAMAGEGIVEN, DAMAGETAKEN, MISSES, HITSEVADED, CRITS, DAMAGECRIT, MAXHIT, MAXCRIT, NEMESIS)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) '''
-    cur = conn.cursor()
-    cur.execute(sql, statinfo)
-    conn.commit()
-
-
-def update_duel_user_stats(conn, statinfo):
-    """ Update duel user stats
-    :param conn: connection to db
-    :param statinfo: stats to be inserted
-    """
-    stats = get_stats(conn, statinfo[0])
-    cur = conn.cursor()
-    if stats is not None:
-        sql = '''UPDATE duel_user_table
-                  SET DUELSWON = ? ,
-                      DUELSLOST = ? ,
-                      DUELSTIED = ? ,
-                      DAMAGEGIVEN = ? ,
-                      DAMAGETAKEN = ? ,
-                      MISSES = ? ,
-                      HITSEVADED = ? ,
-                      CRITS = ? ,
-                      DAMAGECRIT = ? ,
-                      MAXHIT = ? ,
-                      MAXCRIT = ? ,
-                      NEMESIS = ?
-                  WHERE USERID = ?'''
-        update = statinfo[1:]
-        update.append(statinfo[0])
-        cur.execute(sql, update)
-    else:
-        insert_duel_user_stats(conn, statinfo)
-    conn.commit()
-
-
-def create_connection(db_file):
+def create_connection(db_info):
     """ create a database connection to the SQLite database
         specified by db_file
-    :param db_file: database file
+    :param db_info: host, user, pass, database
     :return: Connection object or None
     """
     try:
-        conn = sqlite3.connect(db_file)
+        conn = mariadb.connect(host=db_info[0], user=db_info[1], password=db_info[2], database=db_info[3])
         return conn
     except Exception as e:
         print(e)

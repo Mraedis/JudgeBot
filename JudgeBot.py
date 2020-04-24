@@ -11,8 +11,7 @@ logging.basicConfig(level=logging.INFO, filename="logfile", filemode="a+",
 
 jBot = commands.Bot(command_prefix='&')
 
-n2m = j.nick_to_member
-m2n = j.member_to_nick
+database = j.create_connection(secret.db_info)
 
 j.create_summary_table(database)
 j.create_user_id_table(database)
