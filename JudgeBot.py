@@ -167,9 +167,9 @@ def parse_all():
 
 def parse_one(duelid):
     if len(duelid) > 1:
-        duel = j.get_duel(database, duelid)
-    else:
         duel = duelid
+    else:
+        duel = j.get_duel(database, duelid)
     # duel user stats
     d_u_s = {}
     try:
