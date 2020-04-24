@@ -1,4 +1,4 @@
-import sqlite3
+import mysql.connector as mariadb
 
 
 def create_summary_table(db_file):
@@ -29,15 +29,13 @@ def create_summary_table(db_file):
 
 def create_user_id_table(db_file):
     """ create the initial database table user id
+    Every user has a unique ID, a unique ID can be linked to multiple discord IDs
     :param db_file: database file
     :return: Nothing
     """
     sql_create_user_id_table = """ CREATE TABLE IF NOT EXISTS user_id_table(
-                                        USERID LONG INTEGER PRIMARY KEY,
-                                        NAME TEXT,
-                                        NICK TEXT,
-                                        PREVIOUSNICK TEXT,
-                                        PASTNICKS INTEGER DEFAULT 0
+                                        UNIQUEID INTEGER,
+                                        USERID VARCHAR(20) PRIMARY KEY UNIQUE
                                     ); """
     if db_file is not None:
         create_table(db_file, sql_create_user_id_table)
@@ -51,14 +49,47 @@ def create_duel_table(db_file):
     :return: Nothing
     """
     sql_create_duel_table = """ CREATE TABLE IF NOT EXISTS duel_table(
-                                        DUELID LONG INTEGER PRIMARY KEY,
-                                        TIMESTAMP DECIMAL,
-                                        CHALLENGER LONG INTEGER NOT NULL,
-                                        CONTENDER LONG INTEGER NOT NULL,
+                                        GUILD VARCHAR(20) ,
+                                        CHANNEL VARCHAR(20) ,
+                                        TRIGGERID VARCHAR(20) ,
+                                        MESSAGEID VARCHAR(20) PRIMARY KEY UNIQUE,
+                                        CHALLENGER VARCHAR(20) NOT NULL,
+                                        CONTENDER VARCHAR(20) NOT NULL,
                                         DUELTEXT TEXT NOT NULL
                                     ); """
     if db_file is not None:
         create_table(db_file, sql_create_duel_table)
+    else:
+        print('Error! Could not establish database connection.')
+
+
+def create_parsed_duel_table(db_file):
+    """ create the parsed table for duels
+    :param db_file: database file
+    :return: Nothing
+    """
+    sql_create_parsed_duel_table = """ CREATE TABLE IF NOT EXISTS parsed_duel_table(
+                                        MESSAGEID VARCHAR(20) PRIMARY KEY UNIQUE,
+                                        CHALLENGER INT NOT NULL,
+                                        CONTENDER INT NOT NULL,
+                                        CHA_LVL VARCHAR(3) NOT NULL,
+                                        CON_LVL VARCHAR(3) NOT NULL,
+                                        CHA_DUELSTYLE VARCHAR(20) NOT NULL,
+                                        CON_DUELSTYLE VARCHAR(20) NOT NULL,
+                                        CHA_DAMAGE INT NOT NULL,
+                                        CON_DAMAGE INT NOT NULL,
+                                        CHA_EVADED INT NOT NULL,
+                                        CON_EVADED INT NOT NULL,
+                                        CHA_MAX_HIT INT NOT NULL,
+                                        CON_MAX_HIT INT NOT NULL,
+                                        CHA_CRIT INT NOT NULL,
+                                        CON_CRIT INT NOT NULL,
+                                        CHA_MAX_CRIT INT NOT NULL,
+                                        CON_MAX_CRIT INT NOT NULL,
+                                        WINNER VARCHAR(20) DEFAULT NULL
+                                    ); """
+    if db_file is not None:
+        create_table(db_file, sql_create_parsed_duel_table)
     else:
         print('Error! Could not establish database connection.')
 
@@ -69,18 +100,18 @@ def create_duel_user_table(db_file):
     :return: Nothing
     """
     sql_create_duel_user_table = """ CREATE TABLE IF NOT EXISTS duel_user_table(
-                                        USERID LONG INTEGER PRIMARY KEY,
-                                        DUELSWON LONG INTEGER DEFAULT 0,
-                                        DUELSLOST LONG INTEGER DEFAULT 0,
-                                        DUELSTIED LONG INTEGER DEFAULT 0,
-                                        DAMAGEGIVEN LONG INTEGER DEFAULT 0,
-                                        DAMAGETAKEN LONG INTEGER DEFAULT 0,
-                                        MISSES LONG INTEGER DEFAULT 0,
-                                        HITSEVADED LONG INTEGER DEFAULT 0,
-                                        CRITS LONG INTEGER DEFAULT 0,
-                                        DAMAGECRIT LONG INTEGER DEFAULT 0,
-                                        MAXHIT LONG INTEGER DEFAULT 0,
-                                        MAXCRIT LONG INTEGER DEFAULT 0,
+                                        UNIQUEID INT PRIMARY KEY,
+                                        DUELSWON INT DEFAULT 0,
+                                        DUELSLOST INT DEFAULT 0,
+                                        DUELSTIED INT DEFAULT 0,
+                                        DAMAGEGIVEN VARCHAR(20) DEFAULT 0,
+                                        DAMAGETAKEN VARCHAR(20) DEFAULT 0,
+                                        MISSES VARCHAR(20) DEFAULT 0,
+                                        HITSEVADED VARCHAR(20) DEFAULT 0,
+                                        CRITS VARCHAR(20) DEFAULT 0,
+                                        DAMAGECRIT VARCHAR(20) DEFAULT 0,
+                                        MAXHIT VARCHAR(20) DEFAULT 0,
+                                        MAXCRIT VARCHAR(20) DEFAULT 0,
                                         NEMESIS TEXT
                                     ); """
     if db_file is not None:
@@ -89,14 +120,133 @@ def create_duel_user_table(db_file):
         print('Error! Could not establish database connection.')
 
 
+def create_settings_table(db_file):
+    """ create the initial database table for settings
+    :param db_file: database file
+    :return: Nothing
+    """
+    sql_create_settings_table = """ CREATE TABLE IF NOT EXISTS settings(
+                                        NAME VARCHAR(20) PRIMARY KEY UNIQUE,
+                                        SETTING VARCHAR(20) NOT NULL
+                                    ); """
+    if db_file is not None:
+        create_table(db_file, sql_create_settings_table)
+    else:
+        print('Error! Could not establish database connection.')
+
+
+def get_setting(conn, setting):
+    """ Return member info
+    :param conn: connection to db
+    :param setting: setting to query
+    :return: setting info or None
+    """
+    cur = conn.cursor(buffered=True)
+    cur.execute('SELECT * FROM settings WHERE NAME=%s LIMIT 1', (str(setting),))
+    conn.commit()
+    memberinfo = cur.fetchone()
+    return memberinfo
+
+
+def insert_setting(conn, name, setting):
+    """ Insert new duel in db
+    :param conn: connection to db
+    :param name: setting's name
+    :param setting: text for setting
+    :return: last row ID
+    """
+    sql = ''' INSERT INTO settings(NAME, SETTING)
+              VALUES(%s, %s) '''
+    cur = conn.cursor(buffered=True)
+    cur.execute(sql, [name, setting])
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_setting(conn, name, setting):
+    """ Insert new duel in db
+    :param conn: connection to db
+    :param name: setting's name
+    :param setting: text for setting
+    :return: last row ID
+    """
+    cur = conn.cursor(buffered=True)
+    current_setting = get_setting(conn, name)
+    if current_setting is None:
+        insert_setting(conn, name, setting)
+    else:
+        sql = ''' UPDATE settings
+                  SET SETTING = %s
+                  WHERE NAME = %s'''
+        cur.execute(sql, [setting, name])
+        conn.commit()
+    return cur.lastrowid
+
+
+def insert_member(conn, uid, memberid):
+    """ Insert new duel in db
+    :param conn: connection to db
+    :param uid: unique ID
+    :param memberid: user's ID
+    :return: last row ID
+    """
+    sql = ''' INSERT INTO user_id_table(UNIQUEID, USERID)
+              VALUES(%s, %s) '''
+    cur = conn.cursor(buffered=True)
+    cur.execute(sql, [str(uid), str(memberid)])
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_member(conn, userid):
+    """ Return member info
+    :param conn: connection to db
+    :param userid: member to query
+    :return: memberinfo for user or None
+    """
+    cur = conn.cursor(buffered=True)
+    cur.execute('SELECT * FROM user_id_table WHERE USERID=%s LIMIT 1', (str(userid),))
+    conn.commit()
+    memberinfo = cur.fetchone()
+    return memberinfo
+
+
+def update_member(conn, userid):
+    """ Return member info
+    :param conn: connection to db
+    :param userid: member to query
+    :return: lastrowid
+    """
+    cur = conn.cursor(buffered=True)
+    minfo = get_member(conn, userid)
+    if minfo is None:
+        count = get_membercount(conn)
+        insert_member(conn, count+1, userid)
+        return [count+1, userid]
+    else:
+        return minfo
+
+
+def get_membercount(conn):
+    """ Return member count
+    :param conn: connection to db
+    :return: memberinfo for user or None
+    """
+    cur = conn.cursor(buffered=True)
+    cur.execute('SELECT MAX(UNIQUEID) FROM user_id_table')
+    conn.commit()
+    membercount = cur.fetchone()
+    return membercount[0]
+
+
 def get_duel(conn, duelid):
     """ Return oneduel
     :param conn: connection to db
     :param duelid: duel to retrieve
     :return: duel or None
     """
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM duel_table WHERE DUELID=? LIMIT 1', (duelid,))
+    cur = conn.cursor(buffered=True)
+    cur.execute('SELECT * FROM duel_table WHERE MESSAGEID=%s LIMIT 1', (duelid,))
     conn.commit()
     duel = cur.fetchone()
     return duel
@@ -107,7 +257,7 @@ def get_duels(conn):
     :param conn: connection to db
     :return: list of all duels or None
     """
-    cur = conn.cursor()
+    cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM duel_table')
     conn.commit()
     duels = cur.fetchall()
@@ -120,118 +270,43 @@ def insert_duel(conn, duelinfo):
     :param duelinfo: info to be inserted
     :return: last row ID or None
     """
-    cur = conn.cursor()
-    if get_duel(conn, duelinfo[0]) is None:
-        sql = ''' INSERT INTO duel_table(DUELID, TIMESTAMP, CHALLENGER, CONTENDER, DUELTEXT)
-                      VALUES(?,?,?,?,?) '''
+    cur = conn.cursor(buffered=True)
+    if get_duel(conn, duelinfo[3]) is None:
+        sql = ''' INSERT INTO duel_table(GUILD, CHANNEL, TRIGGERID, MESSAGEID, CHALLENGER, CONTENDER, DUELTEXT)
+                      VALUES(%s,%s,%s,%s,%s,%s,%s) '''
         cur.execute(sql, duelinfo)
         conn.commit()
     return cur.lastrowid
 
 
-def nick_to_member(conn, nick):
-    """ Get member from (nick)name
+def get_parsed_duel(conn, duelid):
+    """ Return oneduel
     :param conn: connection to db
-    :param nick: nickname
-    :return: membername or None
+    :param duelid: parsed duel to retrieve
+    :return: duel or None
     """
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM user_id_table WHERE NICK=? LIMIT 1', (nick,))
+    cur = conn.cursor(buffered=True)
+    cur.execute('SELECT * FROM parsed_duel_table WHERE MESSAGEID=%s LIMIT 1', (duelid,))
     conn.commit()
-    memberinfo = cur.fetchone()
-    if memberinfo is not None:
-        return memberinfo[0]
-    else:
-        cur.execute('SELECT * FROM user_id_table WHERE NAME=? LIMIT 1', (nick,))
-        conn.commit()
-        memberinfo = cur.fetchone()
-        if memberinfo is not None:
-            return memberinfo[0]
-        else:
-            return None
+    duel = cur.fetchone()
+    return duel
 
 
-def member_to_nick(conn, userid):
-    """ Get (nick)name from userid
-    :param conn: connection to db
-    :param userid: users discord ID
-    :return: (nick)name or None
-    """
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM user_id_table WHERE USERID=? LIMIT 1', (userid,))
-    conn.commit()
-    memberinfo = cur.fetchone()
-    if memberinfo is not None:
-        if memberinfo[2] is not None:
-            return memberinfo[2]
-        else:
-            return memberinfo[1]
-    else:
-        return None
-
-
-def get_member(conn, member):
-    """ Return member info
-    :param conn: connection to db
-    :param member: member to query
-    :return: memberinfo for user or None
-    """
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM user_id_table WHERE USERID=? LIMIT 1', (member,))
-    conn.commit()
-    memberinfo = cur.fetchone()
-    return memberinfo
-
-
-def insert_member(conn, memberinfo):
+def insert_parsed_duel(conn, duelinfo):
     """ Insert new duel in db
     :param conn: connection to db
-    :param memberinfo: member to be inserted
-    :return: last row ID
+    :param duelinfo: info to be inserted
+    :return: last row ID or None
     """
-    sql = ''' INSERT INTO user_id_table(USERID, NAME, NICK, PREVIOUSNICK, PASTNICKS)
-              VALUES(?,?,?,?,?) '''
-    cur = conn.cursor()
-    cur.execute(sql, memberinfo)
-    conn.commit()
+    cur = conn.cursor(buffered=True)
+    if get_parsed_duel(conn, duelinfo[0]) is None:
+        sql = ''' INSERT INTO parsed_duel_table(MESSAGEID, CHALLENGER, CONTENDER, CHA_LVL, CON_LVL, 
+        CHA_DUELSTYLE, CON_DUELSTYLE, CHA_DAMAGE, CON_DAMAGE, CHA_EVADED, CON_EVADED, CHA_MAX_HIT, CON_MAX_HIT,
+        CHA_CRIT, CON_CRIT, CHA_MAX_CRIT, CON_MAX_CRIT, WINNER)
+                      VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) '''
+        cur.execute(sql, duelinfo)
+        conn.commit()
     return cur.lastrowid
-
-
-def update_member(conn, memberinfo):
-    """
-    update priority, begin_date, and end date of a task
-    :param conn:
-    :param memberinfo:
-    """
-    cur = conn.cursor()
-    cur_memberinfo = get_member(conn, memberinfo[0])
-    if cur_memberinfo is None:
-        insert_member(conn, memberinfo)
-        print('Member ' + memberinfo[0] + ' created.')
-
-    sql = ''' UPDATE user_id_table
-                  SET NAME = ? ,
-                      NICK = ? ,
-                      PREVIOUSNICK = ? ,
-                      PASTNICKS = ?
-                  WHERE USERID = ?'''
-    membercute = memberinfo[1:]
-    membercute.append(memberinfo[0])
-    cur.execute(sql, membercute)
-    conn.commit()
-
-
-def get_stats(conn, member):
-    """ Return duelstats for member
-    :param conn: connection to db
-    :param member: member to be retrieved
-    :return: stats or None
-    """
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM duel_user_table WHERE USERID=? LIMIT 1', (member,))
-    conn.commit()
-    memberstats = cur.fetchone()
-    return memberstats
 
 
 def get_all_stats(conn):
@@ -239,7 +314,7 @@ def get_all_stats(conn):
     :param conn: connection to db
     :return: list of all duel stats or None
     """
-    cur = conn.cursor()
+    cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM duel_user_table')
     conn.commit()
     stats = cur.fetchall()
@@ -310,7 +385,7 @@ def create_table(conn, create_table_sql):
     :return:
     """
     try:
-        c = conn.cursor()
+        c = conn.cursor(buffered=True)
         c.execute(create_table_sql)
     except Exception as e:
         print(e)

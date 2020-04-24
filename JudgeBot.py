@@ -1,17 +1,15 @@
 from discord.ext import commands
-import asyncio
 import atexit
 from jbsql import jbDB as j
 import secret
+import asyncio
 import logging
 import time
-
 
 logging.basicConfig(level=logging.INFO, filename="logfile", filemode="a+",
                     format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 jBot = commands.Bot(command_prefix='&')
-database = j.create_connection('judgeBot.db')
 
 n2m = j.nick_to_member
 m2n = j.member_to_nick
@@ -20,6 +18,8 @@ j.create_summary_table(database)
 j.create_user_id_table(database)
 j.create_duel_user_table(database)
 j.create_duel_table(database)
+j.create_parsed_duel_table(database)
+j.create_settings_table(database)
 sql_c = database.cursor()
 
 
@@ -30,229 +30,7 @@ async def on_ready():
     logging.info(jBot.user.id)
     logging.info('------')
     for guild in jBot.guilds:
-        if 'Runevillage' in guild.name:
-            logging.info('Updating membertable')
-            update_membertable(guild.members)
-
-
-@jBot.event
-async def on_server_join(guild):
-    logging.info('Joined the server: ' + guild.name)
-
-
-@jBot.event
-async def on_member_update(before, after):
-    if 'Runevillage' in before.guild.name and before.nick != after.nick:
-        logging.info('Member ' + before.name + ' is changing nicknames.')
-        update_member(after)
-
-
-@jBot.event
-async def on_message(message):
-    if ('JimmyBot#8050' in str(message.author)) and (' is dueling ' in message.content):
-        logging.info('Attempting duel processing.')
-        try:
-            # get dueltext, save for later
-            logging.info('---------------------------------')
-            logging.info(message.content)
-            logging.info('---------------------------------')
-            # extract winner and use it to get contender and challenger
-            # get userID for participants
-            # decide to update stats table?
-            # **Judge** (level 66, Rogue style) is dueling **Elmeric** (level 31, Normal style)!
-            duellines = message.content.split('\n')
-
-            challenger = (duellines[0].split('** ('))[0][2:]
-            contender = ((duellines[0].split('** ('))[1]).split('is dueling **')[1]
-
-            chanid = n2m(database, challenger)
-            conid = n2m(database, contender)
-
-            dueltext = message.content.replace('**', '')
-            dueltext = dueltext.replace(contender, str(conid))
-            dueltext = dueltext.replace(challenger, str(chanid))
-
-            duelnum = j.insert_duel(database, [message.id, message.timestamp, chanid, conid, dueltext])
-            if duelnum % 10 == 0:
-                parse_all()
-            logging.info('Just had duel number ' + str(duelnum) + '.')
-        except Exception as e:
-            logging.error('Caught an error in processing duels: ' + str(e))
-    await jBot.process_commands(message)
-    await asyncio.sleep(3)
-
-
-@jBot.command(pass_context=True)
-async def parse(ctx):
-    """parse duelstats"""
-    try:
-        if 145451920557867008 == ctx.message.author.id:
-            start = time.time()
-            logging.info('Parsing duelstats')
-            parse_all()
-            stop = time.time()
-            await ctx.send('Parsed the stats, took ' + str(round(stop - start, 3)) + ' seconds.')
-        return
-    except Exception as e:
-        logging.error('Caught an error while trying to parse stats: ' + str(e))
-        return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
-
-
-@jBot.command(pass_context=True)
-async def execute(ctx):
-    """parse duelstats"""
-    try:
-        if 145451920557867008 == ctx.message.author.id and 'order 66' in ctx.message.content:
-            await ctx.send('It will be done, my lord.')
-        return
-    except Exception as e:
-        logging.error('Caught an error while trying to exterminate jedi: ' + str(e))
-        return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
-
-
-def parse_all():
-    duels = j.get_duels(database)
-    # duel user stats
-    d_u_s = {}
-    for duel in duels:
-        chal = duel[2]
-        cont = duel[3]
-        # Add challenger if not already present
-        if chal not in d_u_s:
-            d_u_s[chal] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '']
-        # Add contender if not already present
-        if cont not in d_u_s:
-            d_u_s[cont] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '']
-        line1, line2 = duel[4].rsplit('\n', 1)
-        for line in line1.split('\n'):
-            if "'s HP: " in line:
-                con_hit, cha_hit = line.split(', ')
-                d_u_s[chal], d_u_s[cont] = parse_hits(d_u_s[chal], d_u_s[cont], cha_hit, con_hit)
-        # Manage wincount
-        con_hp = get_hp(cha_hit)
-        cha_hp = get_hp(con_hit)
-        if cha_hp > 0:
-            d_u_s[chal][0] += 1
-            d_u_s[cont][1] += 1
-        elif con_hp > 0:
-            d_u_s[cont][0] += 1
-            d_u_s[chal][1] += 1
-        else:
-            d_u_s[chal][2] += 1
-            d_u_s[cont][2] += 1
-    # Send stats to database
-    for user in d_u_s:
-        stats = d_u_s[user]
-        stats.insert(0, user)
-        logging.info('Updating ' + str(user) + ' with stats: ' + str(stats))
-        j.update_duel_user_stats(database, stats)
-
-
-@jBot.command(pass_context=True)
-@commands.cooldown(1, 30, commands.BucketType.user)
-async def duelstats(ctx):
-    """Gives a user their duelstats"""
-    try:
-        # USER TABLE:
-        # USERID DUELSWON DUELSLOST DUELSTIED DAMAGEGIVEN DAMAGETAKEN
-        # MISSES HITSEVADED CRITS DAMAGECRIT MAXHIT MAXCRIT NEMESIS
-        us = ctx.message.author
-        stats = j.get_stats(database, us.id)
-        if us.nick is not None:
-            name = us.nick
-        else:
-            name = us.name
-        message = name + ' has won **' + str(round(stats[1] * 100 / (stats[1] + stats[2] + stats[3]))) + '**% (' \
-                  + str(stats[1]) + '/' + str(stats[1] + stats[2] + stats[3]) + ') of their duels, excluding ' \
-                  + str(stats[3]) + ' ties.\nThey managed to deal **' + str(stats[4]) + '** damage while taking **' \
-                  + str(stats[5]) + '** damage in return.\nThey missed **' + str(stats[6]) \
-                  + '** damage but managed to evade **' + str(stats[7]) \
-                  + '** damage in return.\nTheir highest hit ever was **' + str(stats[10]) + '**.'
-        return await ctx.send(message)
-    except Exception as e:
-        logging.error('Caught an error while trying to display parse SQL: ' + str(e))
-        return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
-
-
-@jBot.command(pass_context=True)
-@commands.cooldown(1, 15, commands.BucketType.user)
-async def statme(ctx, arg1, arg2):
-    """Attempts to parse any 'random' stat"""
-    # statme top/bottom/avg stat
-    try:
-        # USER TABLE:
-        # USERID DUELSWON DUELSLOST DUELSTIED DAMAGEGIVEN DAMAGETAKEN
-        # MISSES HITSEVADED CRITS DAMAGECRIT MAXHIT MAXCRIT NEMESIS
-        # Flavours: [[AVG/AVERAGE]]\\ MAX/TOP/HIGH/HIGHEST \\ LOW/BOTTOM/LOWEST/
-        start = time.time()
-        # us = ctx.message.author
-        statmap = {
-            "WON": 1, "WIN": 1, "WINS": 1,
-            "LOSS": 2, "LOSSES": 2, "LOSE": 2,
-            "TIES": 3, "TIED": 3, "DRAW": 3, "DRAWS": 3,
-            "DMG": 4, "DAMAGE": 4,
-            "MISS": 6, "MISSES": 6, "MISSED": 6,
-            "EVADE": 7, "EVADED": 7, "EVADES": 7,
-            "CRIT": 8, "CRITICAL": 8, "CRITS": 8,
-            "HIT": 10, "HITS": 10, "HITTED": 10
-        }
-        arg1 = arg1.lower()
-        arg2 = arg2.upper()
-        if 'Runevillage' in str(ctx.message.guild):
-            if arg1 in 'tophighestbottomlowest' and arg2 in statmap:
-                allstats = j.get_all_stats(database)
-                topcalc = []
-                orderasc = arg1 in 'tophighest'
-                stat2calc = statmap[arg2]
-                # dueluser
-                logging.info('Got in argument. stat to calc is: ' + str(stat2calc))
-                for du in allstats:
-                    uname = m2n(database, du[0])
-                    if uname is not None:
-                        topcalc.append([uname, du[stat2calc]])
-                    else:
-                        logging.info('Could not parse userID ' + str(du[0]))
-                listsorted = sorted(topcalc, key=lambda x: x[1], reverse=orderasc)
-                message = 'Our ' + arg1 + ' 5 ' + arg2 + ' are:\n'
-                for u in listsorted[0:5]:
-                    message = message + '**{}** with **{}**\n'.format(u[0], str(u[1]))
-                stop = time.time()
-                logging.info('Calculating random duel stat took ' + str(stop-start) + ' seconds.')
-            else:
-                message = "I'm sorry I didn't understand that."
-            await ctx.send(message)
-        else:
-            logging.info('Unauthorized command.')
-        return
-    except Exception as e:
-        logging.error('Caught an error while trying parse statme: ' + str(e))
-        return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
-
-
-# @jBot.command()
-# @commands.cooldown(1, 30, commands.BucketType.server)
-# async def lenny():
-#     """shows one of the many lenny faces"""
-#     lennyface = ["( ͡° ͜ʖ ͡°)", "(☭ ͜ʖ ☭)", "(ᴗ ͜ʖ ᴗ)", "( ° ͜ʖ °)", "(⟃ ͜ʖ ⟄)",
-#                  "( ‾ ʖ̫ ‾)", "(͠≖ ͜ʖ͠≖)", "( ͡° ʖ̯ ͡°)", "ʕ ͡° ʖ̯ ͡°ʔ", "( ͡° ل͜ ͡°)",
-#                  "( ͠° ͟ʖ ͡°)", "( ͠° ͟ʖ ͠°)", "( ͡~ ͜ʖ ͡°)", "( ͡o ͜ʖ ͡o)", "( ͡◉ ͜ʖ ͡◉)",
-#                  "( ͡☉ ͜ʖ ͡☉)", "( ͡° ͜V ͡°)", "ʕ ͡° ͜ʖ ͡°ʔ", "( ͡ᵔ ͜ʖ ͡ᵔ )", "( ͡° ͜ʖ ͡ °)"]
-#     try:
-#         return await ctx.send(lennyface[r.randint(0, 19)])
-#     except Exception as e:
-#         logging.error('Caught an error while trying to display a Lenny Face: ' + str(e))
-#         return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
-#
-#
-# @jBot.command()
-# @commands.cooldown(1, 30, commands.BucketType.server)
-# async def dangit():
-#     """Puts up a dangit bobby image"""
-#     try:
-#         return await ctx.send('https://i.pinimg.com/564x/73/be/b2/73beb2a70497ca28a9e2d6d7b1056e9b.jpg')
-#     except Exception as e:
-#         logging.error('Caught an error while trying to do dangit bobby: ' + str(e))
-#         return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
+        update_membertable(guild)
 
 
 @atexit.register
@@ -261,49 +39,37 @@ def database_close():
     database.close()
 
 
-def update_membertable(memberlist):
-    for member in memberlist:
-        update_member(member)
+def update_membertable(guild):
+    for member in guild.members:
+        if (not member.bot) and (j.get_member(database, member.id) is None):
+            insert_member(database, member)
 
 
-def update_member(member):
-    if member.nick:
-        cnick = member.nick
+def insert_member(db, member):
+    count = j.get_membercount(db)
+    if count is None:
+        j.insert_member(db, 1, member.id)
     else:
-        cnick = None
-    memberinfo = j.get_member(database, member.id)
-    prevnick = None
-    if memberinfo is not None:
-        numnicks = memberinfo[4]
-        if member.nick and memberinfo[2] not in cnick and len(memberinfo[2]) != len(cnick):
-            numnicks += 1
-            prevnick = memberinfo[2]
-    else:
-        if cnick:
-            numnicks = 1
-        else:
-            numnicks = 0
-    update = [member.id, member.name, cnick, prevnick, numnicks]
-    j.update_member(database, update)
+        j.insert_member(db, int(count)+1, member.id)
 
 
 def parse_hit(hit):
     damage, crit, evade = 0, 0, 0
-    if ' » ' in hit:
-        hit = hit.split(' » ')[1]
+    if " » " in hit:
+        hit = hit.split(" » ")[1]
     else:
-        hit = hit.split(' (', 1)[1]
-    if '...' not in hit:
-        damage = eval((hit.split(')')[0]).replace('x', '*'))
-    if '*(CRIT!)*' in hit:
+        hit = hit.split(" (", 1)[1]
+    if "..." not in hit:
+        damage = eval((hit.split(")")[0]).replace("x", "*"))
+    if "*(CRIT!)*" in hit:
         crit = damage
-    if '*(EVADED!)*' in hit:
+    if "*(EVADED!)*" in hit:
         evade = damage
     return abs(damage), abs(crit), abs(evade)
 
 
 def get_hp(hit):
-    return int((hit.split("'s HP: ")[1]).split('/')[0])
+    return int(((hit.split("'s HP: ")[1]).split("/")[0]).split("**")[1])
 
 
 def parse_hits(chal, cont, cha_hit, con_hit):
@@ -311,119 +77,229 @@ def parse_hits(chal, cont, cha_hit, con_hit):
     # MISSES HITSEVADED CRITS DAMAGECRIT MAXHIT MAXCRIT NEMESIS
     cha_dmg, cha_crit, con_ev = parse_hit(cha_hit)
     con_dmg, con_crit, cha_ev = parse_hit(con_hit)
-    chal = calc_hits(chal, cha_dmg, cha_crit, cha_ev, con_dmg, con_ev)
-    cont = calc_hits(cont, con_dmg, con_crit, con_ev, cha_dmg, cha_ev)
+    chal = calc_hits(chal, cha_dmg, cha_crit, cha_ev)
+    cont = calc_hits(cont, con_dmg, con_crit, con_ev)
     return chal, cont
 
 
-def calc_hits(stats, dmg, crit, evade, taken, missed):
-    # WON LOST TIED GIVEN TAKEN MISS EVADE CRIT CRITDMG MAXHIT MAXCRIT NEMESIS
-    # 0   1    2    3     4     5    6     7    8       9      10      11
-    # [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '']
-    stats[3] += dmg
-    stats[4] += taken
-    stats[5] += missed
-    stats[6] += evade
-    stats[7] += stats[8] > 0
-    stats[8] += crit
-    if dmg > stats[9]:
-        stats[9] = dmg
-    if crit > stats[10]:
-        stats[10] = crit
+def calc_hits(stats, dmg, crit, evade):
+    # GIVEN EVADED CRITDMG MAXHIT MAXCRIT
+    #   0      1      2       3      4
+    #  [0, 0, 0, 0, 0, 0, 0]
+    stats[0] += dmg
+    stats[1] += evade
+    stats[2] += crit
+    if dmg > stats[3]:
+        stats[3] = dmg
+    if crit > stats[4]:
+        stats[4] = crit
     return stats
 
 
-@jBot.command(pass_context=True)
-async def dueltop(ctx):
-    """parses  all stats for top"""
+def parse_header(header):
+    if 'style' in header:
+        cha_lvl = header.split(" is dueling ")[0].split(", ")[0].split("level ")[1]
+        con_lvl = header.split(" is dueling ")[1].split(", ")[0].split("level ")[1]
+        cha_style = header.split(" is dueling ")[0].split(", ")[1].split(" style")[0]
+        con_style = header.split(" is dueling ")[1].split(", ")[1].split(" style")[0]
+    else:
+        cha_lvl = header.split(" is dueling ")[0].split("level ")[1].split(")")[0]
+        con_lvl = header.split(" is dueling ")[1].split("level ")[1].split(")")[0]
+        cha_style = "None"
+        con_style = "None"
+    return cha_lvl, con_lvl, cha_style, con_style
+
+
+def parse_all():
+    duels = j.get_duels(database)
+    # duel user stats
+    d_u_s = {}
+    lastparsed = None
+    for duel in duels:
+        try:
+            dueltext = duel[6]
+            winner = 0
+            chal = j.update_member(database, duel[4])[0]
+            cont = j.update_member(database, duel[5])[0]
+            if "**" in dueltext.split('\n', 1)[0]:
+                repl_chal = dueltext.split(" is dueling ")[0].split("**", 1)[1].rsplit("**")[0]
+                repl_con = dueltext.split('\n', 1)[0].split(" is dueling ")[1].split("**", 1)[1].rsplit("**")[0]
+            else:
+                repl_chal = dueltext.split(") is dueling ")[0].rsplit(" (", 1)[0]
+                repl_con = dueltext.split('\n', 1)[0].split(") is dueling ")[1].rsplit(" (", 1)[0]
+            dueltext = dueltext.replace(repl_chal, "CHALLENGER")
+            dueltext = dueltext.replace(repl_con, "CONTENDER")
+            # GIVEN EVADED CRITDMG MAXHIT MAXCRIT
+            #   0     1      2       3       4
+            # [0, 0, 0, 0, 0, 0]
+            d_u_s[chal] = [0, 0, 0, 0, 0]
+            d_u_s[cont] = [0, 0, 0, 0, 0]
+            line1, line2 = dueltext.rsplit('\n', 1)
+            cha_lvl, con_lvl, cha_style, con_style = parse_header(line1.split('\n')[0])
+            for line in line1.split('\n'):
+                if "'s HP: " in line:
+                    con_hit, cha_hit = line.split(", ")
+                    d_u_s[chal], d_u_s[cont] = parse_hits(d_u_s[chal], d_u_s[cont], cha_hit, con_hit)
+            # Manage wincount
+            con_hp = get_hp(cha_hit)
+            cha_hp = get_hp(con_hit)
+            if cha_hp > 0:
+                winner = chal
+            elif con_hp > 0:
+                winner = cont
+            else:
+                winner = 0
+            # Send stats to database
+            # INSERT INTO parsed_duel_table(MESSAGEID, CHALLENGER, CONTENDER, CHA_LVL, CON_LVL,
+            # CHA_DUELSTYLE, CON_DUELSTYLE, CHA_DAMAGE, CON_DAMAGE, CHA_EVADED, CON_EVADED,
+            # CHA_MAX_HIT, CON_MAX_HIT, CHA_CRIT, CON_CRIT, CHA_MAX_CRIT, CON_MAX_CRIT, WINNER)
+            # print(str([duel[0], chal, cont, cha_lvl, con_lvl, cha_style, con_style, d_u_s[chal][0], d_u_s[cont][0],
+            #           d_u_s[chal][1], d_u_s[cont][1], d_u_s[chal][3], d_u_s[cont][3], d_u_s[chal][2], d_u_s[cont][2],
+            #           d_u_s[chal][4], d_u_s[cont][4], winner])
+            j.insert_parsed_duel(database, [duel[3], chal, cont, cha_lvl, con_lvl, cha_style, con_style,
+                                            d_u_s[chal][0], d_u_s[cont][0], d_u_s[chal][1], d_u_s[cont][1],
+                                            d_u_s[chal][3], d_u_s[cont][3], d_u_s[chal][2], d_u_s[cont][2],
+                                            d_u_s[chal][4], d_u_s[cont][4], winner])
+            lastparsed = duel[3]
+        except Exception as e:
+            logging.error('Could not process duel with ID ' + str(duel[3]) + ', error: ' + str(e))
+    j.update_setting(database, "last_duel", str(lastparsed))
+
+
+def parse_one(duelid):
+    if len(duelid) > 1:
+        duel = j.get_duel(database, duelid)
+    else:
+        duel = duelid
+    # duel user stats
+    d_u_s = {}
     try:
-        start = time.time()
-        us = ctx.message.author
-        if 145451920557867008 == us.id:
-            allstats = j.get_all_stats(database)
-            topcalc = []
-            # dueluser
-            for du in allstats:
-                uname = m2n(database, du[0])
-                if uname is not None:
-                    # User, win%,
-                    topcalc.append([uname, str(round(du[1] * 100 / (du[1] + du[2] + du[3]))),
-                                    du[1], str(du[1] + du[2] + du[3]), str(du[3]), du[10]])
-                else:
-                    logging.info('Could not parse userID ' + str(du[0]))
-                winsorted = sorted(topcalc, key=lambda x: x[2], reverse=True)
-                hitsorted = sorted(topcalc, key=lambda x: x[5], reverse=True)
-                message = 'Our top 5 **!duel winners** are:\n'
-
-                for u in winsorted[0:5]:
-                    message = message + '**{}** with **{}**% won ({}/{} and {} ties.)\n'\
-                        .format(u[0], u[1], str(u[2]), u[3], u[4])
-
-                message = message + '\nLooking just at the **heaviest hits:**\n'
-
-                for u in hitsorted[0:5]:
-                    message = message + '**{}** hit a max of **{}**.\n'.format(u[0], str(u[5]))
-            stop = time.time()
-            await ctx.send(message)
-            logging.info('Calculating top duel stats took ' + str(stop-start) + ' seconds.')
+        dueltext = duel[6]
+        winner = 0
+        chal = j.update_member(database, duel[4])[0]
+        cont = j.update_member(database, duel[5])[0]
+        if "**" in dueltext.split('\n', 1)[0]:
+            repl_chal = dueltext.split(" is dueling ")[0].split("**", 1)[1].rsplit("**")[0]
+            repl_con = dueltext.split('\n', 1)[0].split(" is dueling ")[1].split("**", 1)[1].rsplit("**")[0]
         else:
-            logging.info('Unauthorized command.')
-        return
+            repl_chal = dueltext.split(") is dueling ")[0].rsplit(" (", 1)[0]
+            repl_con = dueltext.split('\n', 1)[0].split(") is dueling ")[1].rsplit(" (", 1)[0]
+        dueltext = dueltext.replace(repl_chal, "CHALLENGER")
+        dueltext = dueltext.replace(repl_con, "CONTENDER")
+        # GIVEN EVADED CRITDMG MAXHIT MAXCRIT
+        #   0     1      2       3       4
+        # [0, 0, 0, 0, 0, 0]
+        d_u_s[chal] = [0, 0, 0, 0, 0]
+        d_u_s[cont] = [0, 0, 0, 0, 0]
+        line1, line2 = dueltext.rsplit('\n', 1)
+        cha_lvl, con_lvl, cha_style, con_style = parse_header(line1.split('\n')[0])
+        for line in line1.split('\n'):
+            if "'s HP: " in line:
+                con_hit, cha_hit = line.split(", ")
+                d_u_s[chal], d_u_s[cont] = parse_hits(d_u_s[chal], d_u_s[cont], cha_hit, con_hit)
+        # Manage wincount
+        con_hp = get_hp(cha_hit)
+        cha_hp = get_hp(con_hit)
+        if cha_hp > 0:
+            winner = chal
+        elif con_hp > 0:
+            winner = cont
+        else:
+            winner = 0
+        # Send stats to database
+        # INSERT INTO parsed_duel_table(MESSAGEID, CHALLENGER, CONTENDER, CHA_LVL, CON_LVL,
+        # CHA_DUELSTYLE, CON_DUELSTYLE, CHA_DAMAGE, CON_DAMAGE, CHA_EVADED, CON_EVADED,
+        # CHA_MAX_HIT, CON_MAX_HIT, CHA_CRIT, CON_CRIT, CHA_MAX_CRIT, CON_MAX_CRIT, WINNER)
+        # print(str([duel[0], chal, cont, cha_lvl, con_lvl, cha_style, con_style, d_u_s[chal][0], d_u_s[cont][0],
+        #           d_u_s[chal][1], d_u_s[cont][1], d_u_s[chal][3], d_u_s[cont][3], d_u_s[chal][2], d_u_s[cont][2],
+        #           d_u_s[chal][4], d_u_s[cont][4], winner])
+        j.insert_parsed_duel(database, [duel[3], chal, cont, cha_lvl, con_lvl, cha_style, con_style,
+                                        d_u_s[chal][0], d_u_s[cont][0], d_u_s[chal][1], d_u_s[cont][1],
+                                        d_u_s[chal][3], d_u_s[cont][3], d_u_s[chal][2], d_u_s[cont][2],
+                                        d_u_s[chal][4], d_u_s[cont][4], winner])
+        lastparsed = duel[3]
     except Exception as e:
-        logging.error('Caught an error while trying to calculate top: ' + str(e))
-        return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
+        logging.error('Could not process duel with ID ' + str(duel[3]) + ', error: ' + str(e))
+
+
+@jBot.event
+async def on_message(message):
+    if ('JimmyBot#8050' in str(message.author)) and (' is dueling ' in message.content):
+        try:
+            if message.channel.permissions_for(message.guild.me).read_messages:
+                async for prevmsg in message.channel.history(before=message.created_at, limit=1):
+                    if prevmsg.mentions:
+                        j.insert_duel(database, [message.guild.id, message.channel.id, message.id, prevmsg.id,
+                                                 prevmsg.author.id, prevmsg.mentions[0].id, message.content])
+                        parse_one([message.guild.id, message.channel.id, message.id, prevmsg.id,
+                                   prevmsg.author.id, prevmsg.mentions[0].id, message.content])
+                    else:
+                        logging.info('No mention was found in the trigger message')
+        except Exception as e:
+            logging.error('Caught an error in processing duels: ' + str(e))
+    await jBot.process_commands(message)
+    await asyncio.sleep(3)
 
 
 @jBot.command(pass_context=True)
 async def oldstats(ctx):
-    """parses gives a user duelstats"""
+    """parses the old messages for duels"""
+    afmsg = None
+    targettime = None
+    tid = 212062557156933641
     try:
         start = time.time()
         us = ctx.message.author
-        if '145451920557867008' in us.id and 'Runevillage' in ctx.message.guild.name:
+        if 145451920557867008 == us.id and 'Runevillage' in ctx.message.guild.name:
             logging.info('Starting parsing of old stats')
-            targetchan = jBot.get_channel(208498021078401025)
-            afmsg = await targetchan.fetch_message(212062234325680128)  # 212062174623825921
-            targetmsg = 442022192054665216
-            done = 0
-            duelid = 0
-            usertable = {}
-            while afmsg.id <= targetmsg:
-                async for msg in targetchan.history(after=afmsg, limit=5000):
-                    if ('JimmyBot' in str(msg.author)) and (' is dueling ' in msg.content):
-                        duellines = msg.content.split('\n')
-                        conid = '000000000000000000'
-                        chalid = '000000000000000000'
-
-                        if '**' in duellines[0]:
-                            chal = (duellines[0].split('** ('))[0][2:]
-                            cont = ((duellines[0].split('** ('))[1]).split('is dueling **')[1]
-                        else:
-                            chal = (duellines[0].split(' ('))[0]
-                            cont = ((duellines[0].split(' ('))[1]).split('is dueling ')[1]
-
-                        async for trig in targetchan.history(before=msg, limit=15, reverse=True):
-                            if '!duel' in trig.content and trig.mentions:
-                                chalid = trig.author.id
-                                conid = trig.mentions[0].id
-                                break
-                        dueltext = msg.content.replace('**', '')
-                        dueltext = dueltext.replace(cont, conid)
-                        dueltext = dueltext.replace(chal, chalid)
-                        duelid = j.insert_duel(database, [msg.id, msg.timestamp, chalid, conid, dueltext])
-                afmsg = msg
-                done += 1
-                if done % 5 == 0:
-                    logging.info(str(5000 * done) + ' messages done @ msgID ' + str(afmsg.id)
-                                 + ', last duelid: ' + str(duelid) + '.')
+            tchan = jBot.get_channel(208498021078401025)
+            # 212062557156933641 212062557156933641 489755037304750081
+            tmsg = await tchan.fetch_message(699104265763028992)
+            targettime = tmsg.created_at
+            for targetchan in ctx.message.guild.text_channels:
+                if targetchan.permissions_for(ctx.message.guild.me).read_messages:
+                    if targetchan.id == 208498021078401025:
+                        tmsg = await tchan.fetch_message(702541070801829950)
+                        targettime = tmsg.created_at
+                    else:
+                        tchan = jBot.get_channel(208498021078401025)
+                        tmsg = await tchan.fetch_message(212062557156933641)
+                        targettime = tmsg.created_at
+                    prevmsg = None
+                    done = 0
+                    trigger = False
+                    ending = targetchan.last_message_id
+                    print(str(ending))
+                    print(str(targettime))
+                    print(str(targetchan.name))
+                    if ending is not None:
+                        while tid < ending:
+                            async for msg in targetchan.history(after=targettime, limit=5000):
+                                if '!duel ' in msg.content:
+                                    prevmsg = msg
+                                    trigger = True
+                                elif (msg.author.id == 209166316035244033) and (' is dueling ' in msg.content) and trigger:
+                                    # GUILD, CHANNEL, TRIGGERID, MESSAGEID, CHALLENGER, CONTENDER, DUELTEXT
+                                    j.insert_duel(database, [ctx.message.guild.id, targetchan.id, msg.id, prevmsg.id,
+                                                             prevmsg.author.id, prevmsg.mentions[0].id, msg.content])
+                                    trigger = False
+                                else:
+                                    trigger = False
+                            afmsg = msg
+                            tid = afmsg.id
+                            done += 1
+                            targettime = afmsg.created_at
+                            if done % 5 == 0:
+                                logging.info(str(5000 * done) + ' messages done @ msgID ' + str(afmsg.id))
             stop = time.time()
-            logging.info(usertable)
             await ctx.send('Parsed the old stats, took ' + str(round(stop - start, 3)) + ' seconds.')
         else:
             logging.info('Unauthorized command.')
         return
     except Exception as e:
         logging.error('Caught an error while trying to parse stats: ' + str(e))
+        print(str(afmsg.id))
+        print(str(targettime))
         return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
 
 jBot.run(secret.secret)
