@@ -259,11 +259,10 @@ def get_last_duel(conn, channelid):
     :return: duel or None
     """
     cur = conn.cursor(buffered=True)
-    cur.execute('SELECT MESSAGEID FROM duel_table WHERE CHANNEL=%s ORDER BY MESSAGEID DESC LIMIT 1 ', (channelid,))
+    cur.execute('SELECT * FROM duel_table WHERE CHANNEL=%s ORDER BY MESSAGEID DESC LIMIT 1 ', (channelid,))
     conn.commit()
     duel = cur.fetchone()
     return duel
-
 
 
 def get_duels(conn):
