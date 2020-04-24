@@ -230,6 +230,8 @@ async def oldstats(ctx):
                                     # GUILD, CHANNEL, TRIGGERID, MESSAGEID, CHALLENGER, CONTENDER, DUELTEXT
                                     j.insert_duel(database, [ctx.message.guild.id, targetchan.id, msg.id, prevmsg.id,
                                                              prevmsg.author.id, prevmsg.mentions[0].id, msg.content])
+                                    parse_one([ctx.message.guild.id, targetchan.id, msg.id, prevmsg.id,
+                                               prevmsg.author.id, prevmsg.mentions[0].id, msg.content])
                                     trigger = False
                                 else:
                                     trigger = False
@@ -246,6 +248,24 @@ async def oldstats(ctx):
         return
     except Exception as e:
         logging.error('Caught an error while trying to parse stats: ' + str(e))
+        return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
+
+
+@jBot.command(pass_context=True)
+async def parse_duels(ctx):
+    try:
+        start = time.time()
+        us = ctx.message.author
+        if 145451920557867008 == us.id and 'Runevillage' in ctx.message.guild.name:
+            logging.info('Starting parsing of new duels')
+            parse_all()
+            stop = time.time()
+            await ctx.send('Parsed the duels, took ' + str(round(stop - start, 3)) + ' seconds.')
+        else:
+            logging.info('Unauthorized command.')
+        return
+    except Exception as e:
+        logging.error('Caught an error while trying to parse duels: ' + str(e))
         return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
 
 jBot.run(secret.secret)
