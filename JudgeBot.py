@@ -115,53 +115,8 @@ def parse_all():
     d_u_s = {}
     lastparsed = None
     for duel in duels:
-        try:
-            dueltext = duel[6]
-            winner = 0
-            chal = j.update_member(database, duel[4])[0]
-            cont = j.update_member(database, duel[5])[0]
-            if "**" in dueltext.split('\n', 1)[0]:
-                repl_chal = dueltext.split(" is dueling ")[0].split("**", 1)[1].rsplit("**")[0]
-                repl_con = dueltext.split('\n', 1)[0].split(" is dueling ")[1].split("**", 1)[1].rsplit("**")[0]
-            else:
-                repl_chal = dueltext.split(") is dueling ")[0].rsplit(" (", 1)[0]
-                repl_con = dueltext.split('\n', 1)[0].split(") is dueling ")[1].rsplit(" (", 1)[0]
-            dueltext = dueltext.replace(repl_chal, "CHALLENGER")
-            dueltext = dueltext.replace(repl_con, "CONTENDER")
-            # GIVEN EVADED CRITDMG MAXHIT MAXCRIT
-            #   0     1      2       3       4
-            # [0, 0, 0, 0, 0, 0]
-            d_u_s[chal] = [0, 0, 0, 0, 0]
-            d_u_s[cont] = [0, 0, 0, 0, 0]
-            line1, line2 = dueltext.rsplit('\n', 1)
-            cha_lvl, con_lvl, cha_style, con_style = parse_header(line1.split('\n')[0])
-            for line in line1.split('\n'):
-                if "'s HP: " in line:
-                    con_hit, cha_hit = line.split(", ")
-                    d_u_s[chal], d_u_s[cont] = parse_hits(d_u_s[chal], d_u_s[cont], cha_hit, con_hit)
-            # Manage wincount
-            con_hp = get_hp(cha_hit)
-            cha_hp = get_hp(con_hit)
-            if cha_hp > 0:
-                winner = chal
-            elif con_hp > 0:
-                winner = cont
-            else:
-                winner = 0
-            # Send stats to database
-            # INSERT INTO parsed_duel_table(MESSAGEID, CHALLENGER, CONTENDER, CHA_LVL, CON_LVL,
-            # CHA_DUELSTYLE, CON_DUELSTYLE, CHA_DAMAGE, CON_DAMAGE, CHA_EVADED, CON_EVADED,
-            # CHA_MAX_HIT, CON_MAX_HIT, CHA_CRIT, CON_CRIT, CHA_MAX_CRIT, CON_MAX_CRIT, WINNER)
-            # print(str([duel[0], chal, cont, cha_lvl, con_lvl, cha_style, con_style, d_u_s[chal][0], d_u_s[cont][0],
-            #           d_u_s[chal][1], d_u_s[cont][1], d_u_s[chal][3], d_u_s[cont][3], d_u_s[chal][2], d_u_s[cont][2],
-            #           d_u_s[chal][4], d_u_s[cont][4], winner])
-            j.insert_parsed_duel(database, [duel[3], chal, cont, cha_lvl, con_lvl, cha_style, con_style,
-                                            d_u_s[chal][0], d_u_s[cont][0], d_u_s[chal][1], d_u_s[cont][1],
-                                            d_u_s[chal][3], d_u_s[cont][3], d_u_s[chal][2], d_u_s[cont][2],
-                                            d_u_s[chal][4], d_u_s[cont][4], winner])
-            lastparsed = duel[3]
-        except Exception as e:
-            logging.error('Could not process duel with ID ' + str(duel[3]) + ', error: ' + str(e))
+        parse_one(duel)
+        lastparsed = duel[3]
     j.update_setting(database, "last_duel", str(lastparsed))
 
 
@@ -171,8 +126,8 @@ def parse_one(duelid):
     else:
         duel = j.get_duel(database, duelid)
     # duel user stats
-    d_u_s = {}
     try:
+        d_u_s = {}
         dueltext = duel[6]
         winner = 0
         chal = j.update_member(database, duel[4])[0]
@@ -228,14 +183,15 @@ async def on_message(message):
             if message.channel.permissions_for(message.guild.me).read_messages:
                 async for prevmsg in message.channel.history(before=message.created_at, limit=1):
                     if prevmsg.mentions:
-                        j.insert_duel(database, [message.guild.id, message.channel.id, message.id, prevmsg.id,
+                        j.insert_duel(database, [message.guild.id, message.channel.id, prevmsg.id, message.id,
                                                  prevmsg.author.id, prevmsg.mentions[0].id, message.content])
-                        parse_one([message.guild.id, message.channel.id, message.id, prevmsg.id,
+                        logging.info('Inserted duel ' + str(message.id))
+                        parse_one([message.guild.id, message.channel.id, prevmsg.id, message.id,
                                    prevmsg.author.id, prevmsg.mentions[0].id, message.content])
                     else:
                         logging.info('No mention was found in the trigger message')
         except Exception as e:
-            logging.error('Caught an error in processing duels: ' + str(e))
+            logging.error('Caught an error in processing duel: ' + str(e))
     await jBot.process_commands(message)
     await asyncio.sleep(3)
 
