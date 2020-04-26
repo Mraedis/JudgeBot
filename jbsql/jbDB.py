@@ -252,6 +252,22 @@ def get_duel(conn, duelid):
     return duel
 
 
+def get_stats(conn, userid):
+    """ Return stats for user
+    :param conn: connection to db
+    :param userid: user in question
+    :return: list of duels as contender and challenger
+    """
+    cur = conn.cursor(buffered=True)
+    cur.execute('SELECT * FROM duel_table WHERE CONTENDER=%s LIMIT 1', (userid,))
+    conn.commit()
+    contender = cur.fetchall()
+    cur.execute('SELECT * FROM duel_table WHERE CHALLENGER=%s LIMIT 1', (userid,))
+    conn.commit()
+    challenger = cur.fetchall()
+    return contender, challenger
+
+
 def get_last_duel(conn, channelid):
     """ Return oneduel
     :param conn: connection to db
@@ -320,18 +336,6 @@ def insert_parsed_duel(conn, duelinfo):
         cur.execute(sql, duelinfo)
         conn.commit()
     return cur.lastrowid
-
-
-def get_all_stats(conn):
-    """ Return all duels
-    :param conn: connection to db
-    :return: list of all duel stats or None
-    """
-    cur = conn.cursor(buffered=True)
-    cur.execute('SELECT * FROM duel_user_table')
-    conn.commit()
-    stats = cur.fetchall()
-    return stats
 
 
 def create_connection(db_info):

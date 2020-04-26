@@ -49,7 +49,7 @@ def insert_member(db, member):
     if count is None:
         j.insert_member(db, 1, member.id)
     else:
-        j.insert_member(db, int(count)+1, member.id)
+        j.insert_member(db, int(count) + 1, member.id)
 
 
 def parse_hit(hit):
@@ -226,11 +226,12 @@ async def oldstats(ctx):
                                 if '!duel ' in msg.content:
                                     prevmsg = msg
                                     trigger = True
-                                elif (msg.author.id == 209166316035244033) and (' is dueling ' in msg.content) and trigger:
+                                elif (msg.author.id == 209166316035244033) and (
+                                        ' is dueling ' in msg.content) and trigger:
                                     # GUILD, CHANNEL, TRIGGERID, MESSAGEID, CHALLENGER, CONTENDER, DUELTEXT
-                                    j.insert_duel(database, [ctx.message.guild.id, targetchan.id, msg.id, prevmsg.id,
+                                    j.insert_duel(database, [ctx.message.guild.id, targetchan.id, prevmsg.id, msg.id,
                                                              prevmsg.author.id, prevmsg.mentions[0].id, msg.content])
-                                    parse_one([ctx.message.guild.id, targetchan.id, msg.id, prevmsg.id,
+                                    parse_one([ctx.message.guild.id, targetchan.id, prevmsg.id, msg.id,
                                                prevmsg.author.id, prevmsg.mentions[0].id, msg.content])
                                     trigger = False
                                 else:
@@ -267,5 +268,37 @@ async def parse_duels(ctx):
     except Exception as e:
         logging.error('Caught an error while trying to parse duels: ' + str(e))
         return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
+
+
+# @jBot.command(pass_context=True)
+# @commands.cooldown(1, 30, commands.BucketType.user)
+# async def duelstats(ctx):
+#     """Gives a user their duelstats"""
+#     try:
+#         # USER TABLE:
+#         # USERID DUELSWON DUELSLOST DUELSTIED DAMAGEGIVEN DAMAGETAKEN
+#         # MISSES HITSEVADED CRITS DAMAGECRIT MAXHIT MAXCRIT NEMESIS
+#         us = ctx.message.author
+#         uid = j.get_member(database, us.id)[0]
+#         # 1             2           3           4       5           6           7               8           9
+#         # MESSAGEID, CHALLENGER, CONTENDER, CHA_LVL, CON_LVL, CHA_DUELSTYLE, CON_DUELSTYLE, CHA_DAMAGE, CON_DAMAGE
+#         # 10            11          12              13          14      15          16          17            18
+#         # CHA_EVADED, CON_EVADED, CHA_MAX_HIT, CON_MAX_HIT, CHA_CRIT, CON_CRIT, CHA_MAX_CRIT, CON_MAX_CRIT, WINNER
+#         defending, attacking = j.get_stats(database, uid)
+#         if us.nick is not None:
+#             name = us.nick
+#         else:
+#             name = us.name
+#         message = name + ' has won **' + str(round(stats[1] * 100 / (stats[1] + stats[2] + stats[3]))) + '**% ('\
+#                   + str(stats[1]) + '/' + str(stats[1] + stats[2] + stats[3]) + ') of their duels, excluding '\
+#                   + str(stats[3]) + ' ties.\nThey managed to deal **' + str(stats[4]) + '** damage while taking **'\
+#                   + str(stats[5]) + '** damage in return.\nThey missed **' + str(stats[6])\
+#                   + '** damage but managed to evade **' + str(stats[7])\
+#                   + '** damage in return.\nTheir highest hit ever was **' + str(stats[10]) + '**.'
+#         return await ctx.send(message)
+#     except Exception as e:
+#         logging.error('Caught an error while trying to display parse SQL: ' + str(e))
+#         return await ctx.send('Something went wrong. Call 9-1-1-Judge!')
+
 
 jBot.run(secret.secret)
