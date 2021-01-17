@@ -143,6 +143,7 @@ def get_setting(conn, setting):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM settings WHERE NAME=%s LIMIT 1', (str(setting),))
+    conn.ping(True, 2)
     conn.commit()
     memberinfo = cur.fetchone()
     return memberinfo
@@ -159,6 +160,7 @@ def insert_setting(conn, name, setting):
               VALUES(%s, %s) '''
     cur = conn.cursor(buffered=True)
     cur.execute(sql, [name, setting])
+    conn.ping(True, 2)
     conn.commit()
     return cur.lastrowid
 
@@ -179,6 +181,7 @@ def update_setting(conn, name, setting):
                   SET SETTING = %s
                   WHERE NAME = %s'''
         cur.execute(sql, [setting, name])
+        conn.ping(True, 2)
         conn.commit()
     return cur.lastrowid
 
@@ -194,6 +197,7 @@ def insert_member(conn, uid, memberid):
               VALUES(%s, %s) '''
     cur = conn.cursor(buffered=True)
     cur.execute(sql, [str(uid), str(memberid)])
+    conn.ping(True, 2)
     conn.commit()
     return cur.lastrowid
 
@@ -206,6 +210,7 @@ def get_member(conn, userid):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM user_id_table WHERE USERID=%s LIMIT 1', (str(userid),))
+    conn.ping(True, 2)
     conn.commit()
     memberinfo = cur.fetchone()
     return memberinfo
@@ -217,7 +222,6 @@ def update_member(conn, userid):
     :param userid: member to query
     :return: lastrowid
     """
-    cur = conn.cursor(buffered=True)
     minfo = get_member(conn, userid)
     if minfo is None:
         count = get_membercount(conn)
@@ -234,6 +238,7 @@ def get_membercount(conn):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT MAX(UNIQUEID) FROM user_id_table')
+    conn.ping(True, 2)
     conn.commit()
     membercount = cur.fetchone()
     return membercount[0]
@@ -247,6 +252,7 @@ def get_duel(conn, duelid):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM duel_table WHERE MESSAGEID=%s LIMIT 1', (duelid,))
+    conn.ping(True, 2)
     conn.commit()
     duel = cur.fetchone()
     return duel
@@ -260,9 +266,11 @@ def get_stats(conn, userid):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM duel_table WHERE CONTENDER=%s LIMIT 1', (userid,))
+    conn.ping(True, 2)
     conn.commit()
     contender = cur.fetchall()
     cur.execute('SELECT * FROM duel_table WHERE CHALLENGER=%s LIMIT 1', (userid,))
+    conn.ping(True, 2)
     conn.commit()
     challenger = cur.fetchall()
     return contender, challenger
@@ -276,6 +284,7 @@ def get_last_duel(conn, channelid):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM duel_table WHERE CHANNEL=%s ORDER BY MESSAGEID DESC LIMIT 1 ', (channelid,))
+    conn.ping(True, 2)
     conn.commit()
     duel = cur.fetchone()
     return duel
@@ -288,6 +297,7 @@ def get_duels(conn):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM duel_table')
+    conn.ping(True, 2)
     conn.commit()
     duels = cur.fetchall()
     return duels
@@ -304,6 +314,7 @@ def insert_duel(conn, duelinfo):
         sql = ''' INSERT INTO duel_table(GUILD, CHANNEL, TRIGGERID, MESSAGEID, CHALLENGER, CONTENDER, DUELTEXT)
                       VALUES(%s,%s,%s,%s,%s,%s,%s) '''
         cur.execute(sql, duelinfo)
+        conn.ping(True, 2)
         conn.commit()
     return cur.lastrowid
 
@@ -316,6 +327,7 @@ def get_parsed_duel(conn, duelid):
     """
     cur = conn.cursor(buffered=True)
     cur.execute('SELECT * FROM parsed_duel_table WHERE MESSAGEID=%s LIMIT 1', (duelid,))
+    conn.ping(True, 2)
     conn.commit()
     duel = cur.fetchone()
     return duel
@@ -334,6 +346,7 @@ def insert_parsed_duel(conn, duelinfo):
         CHA_CRIT, CON_CRIT, CHA_MAX_CRIT, CON_MAX_CRIT, WINNER)
                       VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) '''
         cur.execute(sql, duelinfo)
+        conn.ping(True, 2)
         conn.commit()
     return cur.lastrowid
 
@@ -364,4 +377,3 @@ def create_table(conn, create_table_sql):
         c.execute(create_table_sql)
     except Exception as e:
         print(e)
-
